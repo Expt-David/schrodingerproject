@@ -8,6 +8,7 @@ with bcs: u(0) = u(x_max) = 0
 """
 
 import numpy as np
+from scipy import interpolate
 
 def c_to_tup(x):
     # given a complex number x, returns a tuple of floats for the real and imag parts of x
@@ -38,22 +39,26 @@ class Wavefunction:
         self.imag[0] = np.imag(init)
         self.boundaries = boundaries
         self._setbcs(0)
+        self.flip = True
 
     def _setbcs(self, key):
         # make wavefunction satisfy BCs
         self.real[key,  0], self.imag[key,  0] = c_to_tup(self.boundaries[0])
         self.real[key, -1], self.imag[key, -1] = c_to_tup(self.boundaries[1])
 
-    def deriv(self, psi, order=2, dirichlet=True):
+    def deriv(self, curr_time, psi, order=2, dirichlet=True):
         # returns the second spatial derivative of psi, ∂²ψ/∂x²
         # TODO: implement periodic boundary condition
         df = np.empty_like(psi)
         
+        if curr_time % 17 == 1:
+            self.flip = not self.flip
+        
         # central difference        
-        if order == 2:
+        if self.flip:
             # 2nd order central difference for 2nd derivative
             df[1:-1] = (psi[2:] - 2*psi[1:-1] + psi[0:-2])
-        elif order == 4:
+        else:
             # 4th order central difference for 2nd derivative
             df[2:-2] = (-psi[:-4] + 16*psi[1:-3] - 30 * psi[2:-2] + 16*psi[3:-1] - psi[4:])/12 
             df[1] = psi[0] - 2*psi[1] + psi[2]
@@ -68,24 +73,49 @@ class Wavefunction:
             df[0] = -1 * psi[0] + 4 * psi[1] - 5*psi[2] + 2 * psi[3] # first point
             df[-1] = -1 * psi[-1] + 4 * psi[-2] - 5*psi[-3] + 2 * psi[-4] # last point
         
+        df = self.smooth(df, curr_time)
+        
         return df / self.dx2
+        
+    def smooth(self, df, curr_time):
+        
+        if curr_time % 7 == 1:
+            self.flip = not self.flip
+        
+        if self.flip:
+            kn = 5
+            n = 10
+        else:
+            kn = 1
+            n = 20
+            
+        reslt = np.array([])
+        split = lambda l, n: [l[i:i+n] for i in range(0, len(l), n)]
+        x_total = split(self.x, n)
+        y_total = split(df, n)
+        i = 0
+        for x in x_total:
+            tck = interpolate.splrep(x, y_total[i], k=kn, s=1000)
+            i += 1
+            reslt = np.concatenate((reslt, interpolate.splev(x, tck)))
+        return reslt
 
     def solve(self):
         kreal = np.empty([4,self.nx])
         kimag = np.empty([4,self.nx])
 
         for i in range(0, self.nt - 1):
-            kreal[0] = - 0.5 * self.deriv(self.imag[i])
-            kimag[0] =   0.5 * self.deriv(self.real[i])
+            kreal[0] = - 0.5 * self.deriv(i, self.imag[i])
+            kimag[0] =   0.5 * self.deriv(i, self.real[i])
 
-            kreal[1] = - 0.5 * self.deriv(self.imag[i] + self.dt * kreal[0]/2)
-            kimag[1] =   0.5 * self.deriv(self.real[i] + self.dt * kimag[0]/2)
+            kreal[1] = - 0.5 * self.deriv(i, self.imag[i] + self.dt * kreal[0]/2)
+            kimag[1] =   0.5 * self.deriv(i, self.real[i] + self.dt * kimag[0]/2)
 
-            kreal[2] = - 0.5 * self.deriv(self.imag[i] + self.dt * kreal[1]/2)
-            kimag[2] =   0.5 * self.deriv(self.real[i] + self.dt * kimag[1]/2)
+            kreal[2] = - 0.5 * self.deriv(i, self.imag[i] + self.dt * kreal[1]/2)
+            kimag[2] =   0.5 * self.deriv(i, self.real[i] + self.dt * kimag[1]/2)
 
-            kreal[3] = - 0.5 * self.deriv(self.imag[i] + self.dt * kreal[2])
-            kimag[3] =   0.5 * self.deriv(self.real[i] + self.dt * kimag[2])
+            kreal[3] = - 0.5 * self.deriv(i, self.imag[i] + self.dt * kreal[2])
+            kimag[3] =   0.5 * self.deriv(i, self.real[i] + self.dt * kimag[2])
 
             self.real[i + 1] = self.real[i] + self.dt * ((1 / 6) * kreal[0] + (1 / 3) * kreal[1] + (1 / 3) * kreal[2] + (1 / 6) * kreal[3])
             self.imag[i + 1] = self.imag[i] + self.dt * ((1 / 6) * kimag[0] + (1 / 3) * kimag[1] + (1 / 3) * kimag[2] + (1 / 6) * kimag[3])

@@ -11,6 +11,7 @@ import qm
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
+from scipy import interpolate
         
         
 def initial(x):
@@ -18,9 +19,16 @@ def initial(x):
     # return 0.5 * np.sin(5*x*np.pi)
     return np.exp(-(x-0.3)**2/0.1**2)
 
-t_int = 0.000001
+t_int = 0.00001
 foo = qm.Wavefunction(initial, dt=t_int, trange=(0,0.2))
 foo.solve()
+
+fg = plt.figure()
+tck = interpolate.splrep(foo.x[0:10],foo.real[6200][0:10], k=4, s=1000)
+reslt = interpolate.splev(foo.x[0:10], tck)
+plt.plot(foo.x[0:10], foo.real[6200][0:10], 'o')
+plt.plot(foo.x[0:10], reslt)
+plt.show()
     
 fig, ax = plt.subplots()
 time = ax.text(.7, .5, '', fontsize=15)
@@ -43,12 +51,14 @@ def animate(i):
     line1.set_ydata(foo.real[i])  # update the data
     line2.set_ydata(foo.imag[i]) 
     time.set_text("t = {0:.4f}".format(t_int*i))
+    #time.set_x(0.01)
+    #time.set_y(0.1)
     return line1, line2
 
     
 ani = animation.FuncAnimation(fig,
                               animate,
-                              np.arange(0, foo.nt,30),
+                              np.arange(0, foo.nt,30), 
                               interval=10, 
                               blit=False, 
                               init_func=init)
